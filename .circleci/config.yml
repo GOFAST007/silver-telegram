@@ -1,0 +1,97 @@
+version: 2.1
+
+# Required for dynamic configuration
+setup: true
+
+# Orbs
+orbs:
+  path-filtering: circleci/path-filtering@0.1.0
+  continuation: circleci/continuation@0.2.0
+
+# All input parameters to pass to build config
+parameters:
+  run-docs-only:
+    type: boolean
+    default: false
+
+  upload-to-storage:
+    type: string
+    default: '1'
+
+  run-build-linux:
+    type: boolean
+    default: false
+
+  run-build-mac:
+    type: boolean
+    default: false
+
+  run-linux-publish:
+    type: boolean
+    default: false
+
+  linux-publish-arch-limit:
+    type: enum
+    default: all
+    enum: ["all", "arm", "arm64", "x64", "ia32"]
+
+  run-macos-publish:
+    type: boolean
+    default: false
+
+  macos-publish-arch-limit:
+    type: enum
+    default: all
+    enum: ["all", "osx-x64", "osx-arm64", "mas-x64", "mas-arm64"]
+
+jobs:
+  generate-config:
+    docker:
+      - image: cimg/node:16.14
+    steps:
+      - checkout
+      - path-filtering/set-parameters:
+          base-revision: main
+          mapping: |
+            ^((?!docs/).)*$ run-build-mac true
+            ^((?!docs/).)*$ run-build-linux true
+            docs/.* run-docs-only true
+            ^((?!docs/).)*$ run-docs-only false
+      - run:
+          command: |
+            cd .circleci/config
+            yarn
+            export CIRCLECI_BINARY="$HOME/circleci"
+            curl -fLSs https://raw.githubusercontent.com/CircleCI-Public/circleci-cli/main/install.sh | DESTDIR=$CIRCLECI_BINARY bash
+            node build.js
+          name: Pack config.yml
+      - run:
+          name: Set params
+          command: node .circleci/config/params.js
+      - continuation/continue:
+          configuration_path: .circleci/config-staging/built.yml
+          parameters: /tmp/pipeline-parameters.json
+
+# Initial setup workflow
+workflows:
+  setup:
+    jobs:
+      - generate-config
+                  - name: Setup Go environment
+  uses: actions/setup-go@v5.0.0
+  with:
+    # The Go version to download (if necessary) and use. Supports semver spec and ranges. Be sure to enclose this option in single quotation marks.
+    go-version: # optional
+    # Path to the go.mod or go.work file.
+    go-version-file: # optional
+    # Set this option to true if you want the action to always check for the latest available version that satisfies the version spec
+    check-latest: # optional
+    # Used to pull Go distributions from go-versions. Since there's a default, this is typically not supplied by the user. When running this action on github.com, the default value is sufficient. When running on GHES, you can pass a personal access token for github.com if you are experiencing rate limiting.
+    token: # optional, default is ${{ github.server_url == 'https://github.com' && github.token || '' }}
+    # Used to specify whether caching is needed. Set to true, if you'd like to enable caching.
+    cache: # optional, default is true
+    # Used to specify the path to a dependency file - go.sum
+    cache-dependency-path: # optional
+    # Target architecture for Go to use. Examples: x86, x64. Will use system architecture by default.
+    architecture: # optional
+          
